@@ -50,6 +50,7 @@ void Matrix::Init(Local<Object> target) {
   Nan::SetPrototypeMethod(ctor, "saveAsync", SaveAsync);
   Nan::SetPrototypeMethod(ctor, "resize", Resize);
   Nan::SetPrototypeMethod(ctor, "rotate", Rotate);
+  Nan::SetPrototypeMethod(ctor, "rotate_whiteBackground", Rotate_whiteBackground);
   Nan::SetPrototypeMethod(ctor, "warpAffine", WarpAffine);
   Nan::SetPrototypeMethod(ctor, "copyTo", CopyTo);
   Nan::SetPrototypeMethod(ctor, "convertTo", ConvertTo);
@@ -2144,6 +2145,56 @@ NAN_METHOD(Matrix::Rotate) {
   rotMatrix = getRotationMatrix2D(center, angle, 1.0);
 
   cv::warpAffine(self->mat, res, rotMatrix, self->mat.size());
+  self->setMat(res);
+
+  return;
+}
+
+NAN_METHOD(Matrix::Rotate_whiteBackground) {
+  Nan::HandleScope scope;
+
+  Matrix *self = Nan::ObjectWrap::Unwrap<Matrix>(info.This());
+  cv::Mat rotMatrix(2, 3, CV_32FC1);
+  cv::Mat res;
+
+  float angle = Nan::To<double>(info[0]).FromJust();
+
+  // Modification by SergeMv
+  //-------------
+  // If you provide only the angle argument and the angle is multiple of 90, then
+  // we do a fast thing
+  bool rightOrStraight = (ceil(angle) == angle) && (!((int)angle % 90))
+      && (info.Length() == 1);
+  if (rightOrStraight) {
+    int angle2 = ((int)angle) % 360;
+    if (!angle2) {return;}
+    if (angle2 < 0) {angle2 += 360;}
+    // See if we do right angle rotation, we transpose the matrix:
+    if (angle2 % 180) {
+      cv::transpose(self->mat, res);
+      self->setMat(res);
+    }
+    // Now flip the image
+    int mode = -1;// flip around both axes
+    // If counterclockwise, flip around the x-axis
+    if (angle2 == 90) {mode = 0;}
+    // If clockwise, flip around the y-axis
+    if (angle2 == 270) {mode = 1;}
+    cv::flip(self->mat, self->mat, mode);
+    return;
+  }
+
+  //-------------
+  int x = info[1]->IsUndefined() ? round(self->mat.size().width / 2) :
+      info[1]->Uint32Value();
+  int y = info[1]->IsUndefined() ? round(self->mat.size().height / 2) :
+      info[2]->Uint32Value();
+
+  cv::Point center = cv::Point(x,y);
+  rotMatrix = getRotationMatrix2D(center, angle, 1.0);
+
+  cv::warpAffine(self->mat, res, rotMatrix, self->mat.size(),
+    cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255, 255, 255));
   self->setMat(res);
 
   return;
